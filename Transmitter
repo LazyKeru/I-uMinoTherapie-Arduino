@@ -1,1 +1,52 @@
+/*--------------------------------------------------------------------------------*/
 
+/* My stack structure to stock the Trame it receives */
+
+typedef struct ElementTrame ElementTrame;
+struct ElementTrame{
+  int Byte;
+  ElementTrame * suivant;
+}
+
+/* Might change them to local var */
+
+ElementTrame * TopTrame;       //Points to the top of the stack
+ElementTrame * TopTrameProcessed; //Points to the top of the processed stack
+
+
+/*Function to create the structure which will stock the Trame*/
+
+ElementTrame * init_tram(){
+  ElementTrame * elementtrame = malloc(sizeof(*ElementTrame));
+  if(elementtrame == NULL)
+    exit(EXIT_FAILURE);
+  }
+  elementtrame->suivant = NULL;
+  TopTrames = elementtrame;
+}
+
+/*Function to remove the first element of the Trame list*/
+
+void pop(ElementTrame * toptrame){
+  
+  if(toptrame == NULL){
+    exit(EXIT_FAILURE);
+  }
+  ElementTrame * TrameDelete;
+  TrameDelete = toptrame;
+  toptrame = toptrame->suivant;
+  free(elemeenttrame);
+}
+
+/*Function to add elemenent to Trame list*/
+void pileup(ElementTrame * toptrame, int incomingByte){
+  ElementTrame * newElementTrame = malloc(sizeof(*ElementTrame));
+  if(ElementTrame == NULL){
+    exit(EXIT_FAILURE);
+  }
+  newElementTrame->Byte = incomingByte;
+  newElementTrame->suivant = toptrame;
+  toptrame = newElementTrame;
+}
+
+/*--------------------------------------------------------------------------------*/
