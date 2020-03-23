@@ -1,6 +1,7 @@
 int LedRG = 13;   //Pin commanding Red and Green Led
 int LDR = 14;     //Pin receiving LDR value
-int TrameExpectedLength = 20;
+int header[6] = {'%','&','D','D','A','P'};
+int footer[3] = {'@',':','@'};
 
 /*--------------------------------------------------------------------------------*/
 
@@ -65,51 +66,49 @@ void setup() {
 /* function that receives the message */
 
 int receive_message(){
-  int TrameLength = 1;
-  int response; // 0: Time out / 1: Trame too long
+  int response; // 0: Time out / 1: Header error / 2: Footer error
   int i = 0;
+  int j = 0;
   int incomingByte = NULL;
   //It waits to receive the start of the Trames
-  while(incomingByte != '%' && i<1000){
+  while(incomingByte != header[0] && i<1000){
     incomingByte = Serial.read();
     i++;
   }
   //Checks if it didn't timeout
   if(i<1000){
-    ElementTrame* TrameReception = init_tram();
-    i = 0;
-    while(Serial.available() > 0 && i!=1){
-      incomingByte = Serial.read();
-      //Checks if it received the end of a trame. Incase another trame is sent right after, or else we would get a huge stack of multiple trames
-      if(incomingByte == '@'){
-        incomingByte = Serial.read();
-        if(incomingByte == ':'){
-          if(incomingByte == '@'){
-            pileup(TrameReception,'@');
-            pileup(TrameReception,':');
-            pileup(TrameReception,'@');
-          }else{
-            pileup(TrameReception,'@');
-            pileup(TrameReception,':');
-            pileup(TrameReception,incomingByte);
-          }
-          TrameLength = TrameLength + 3;
-        }else{
-          pileup(TrameReception,'@');
-          pileup(TrameReception,incomingByte);
-          TrameLength = TrameLength + 2;
-        }
-      }else{
-        pileup(TrameReception,incomingByte);
-        TrameLength++;
+    //Checks the 5 first element of the beginning of the trame
+    for(i=0;i<5;i++){
+      if(Serial.read() != header[1+i]){
+        i = 10; //error from header
       }
-      //End of our checkup
     }
-    //Checks if the lenght of the Trame is the one we want
-    if(TrameLength == TrameExpectedLength){
-      response = AnalyseTrame(TrameReception);
+    //If i != we can check the rest of the trame
+    if( i != 10 ){
+      ElementTrame* TrameReception = init_tram();
+      while((Serial.available() > 0) && (i!=2)){
+        incomingByte = Serial.read();
+        pileup(TrameReception,incomingByte);
+        if(incomingByte == footer[0]){
+          i = 0;
+          while((i<3) && (incomingByte!=footer[i])){
+            incomingByte = Serial.read();
+            pileup(TrameReception,incomingByte);
+            i++;
+          }
+        }
+      }
+      if(i==2){
+        for(j=0;j<3;j++){
+          pop(TrameReception);
+        }
+        response = AnalyseTrame(TrameReception);
+      }else{
+        response = 2; // Footer error
+      }
     }else{
-      response = 1; // Trame too long
+    //If i = 10 the the header had a problem
+      response = 1; // Header error
     }
   }else{
     response = 0; // Time out
