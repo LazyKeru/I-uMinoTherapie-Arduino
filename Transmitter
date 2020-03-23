@@ -1,3 +1,7 @@
+int LedRG = 13;   //Pin commanding Red and Green Led
+int LDR = 14;     //Pin receiving LDR value
+int TrameExpectedLength = 20;
+
 /*--------------------------------------------------------------------------------*/
 
 /* -==  My stack structure to stock the Trame it receives  ==- */
@@ -61,7 +65,8 @@ void setup() {
 /* function that receives the message */
 
 int receive_message(){
-  int response; // 1: Time out / 2: ...
+  int TrameLength = 1;
+  int response; // 0: Time out / 1: Trame too long
   int i = 0;
   int incomingByte = NULL;
   //It waits to receive the start of the Trames
@@ -88,18 +93,26 @@ int receive_message(){
             pileup(TrameReception,':');
             pileup(TrameReception,incomingByte);
           }
+          TrameLength = TrameLength + 3;
         }else{
           pileup(TrameReception,'@');
           pileup(TrameReception,incomingByte);
+          TrameLength = TrameLength + 2;
         }
       }else{
         pileup(TrameReception,incomingByte);
+        TrameLength++;
       }
       //End of our checkup
     }
-    response = AnalyseTrame(TrameReception);
+    //Checks if the lenght of the Trame is the one we want
+    if(TrameLength == TrameExpectedLength){
+      response = AnalyseTrame(TrameReception);
+    }else{
+      response = 1; // Trame too long
+    }
   }else{
-    response = 0;
+    response = 0; // Time out
   }
   return response;
 }
@@ -107,5 +120,5 @@ int receive_message(){
 /* function to extract the trame info / check it */
 
 int AnalyseTrame(ElementTrame* Trame){
-  //future code
+  
 }
