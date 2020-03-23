@@ -1,5 +1,7 @@
 int LedRG = 13;   //Pin commanding Red and Green Led
 int LDR = 14;     //Pin receiving LDR value
+int HeaderLength = 6;
+int FooterLenght = 3;
 int header[6] = {'%','&','D','D','A','P'};
 int footer[3] = {'@',':','@'};
 
@@ -77,8 +79,8 @@ int receive_message(){
   }
   //Checks if it didn't timeout
   if(i<1000){
-    //Checks the 5 first element of the beginning of the trame
-    for(i=0;i<5;i++){
+    //Checks the 'HeaderLength' first element of the beginning of the trame
+    for(i=0;i<HeaderLength-1;i++){
       if(Serial.read() != header[1+i]){
         i = 10; //error from header
       }
@@ -91,7 +93,7 @@ int receive_message(){
         pileup(TrameReception,incomingByte);
         if(incomingByte == footer[0]){
           i = 0;
-          while((i<3) && (incomingByte!=footer[i])){
+          while((i<FooterLenght) && (incomingByte!=footer[i])){
             incomingByte = Serial.read();
             pileup(TrameReception,incomingByte);
             i++;
