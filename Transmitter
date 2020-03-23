@@ -1,20 +1,15 @@
 /*--------------------------------------------------------------------------------*/
 
-/* My stack structure to stock the Trame it receives */
+/* -==  My stack structure to stock the Trame it receives  ==- */
 
+//Might be better to put it in a .h file. As arduino sometimes compiles functions before structures.
 typedef struct ElementTrameStructure ElementTrame;
 struct ElementTrameStructure{
   int Byte;
   ElementTrame* suivant = NULL;
 };
 
-/* Might change them to local var */
-
-ElementTrame * TopTrame;       //Points to the top of the stack
-ElementTrame * TopTrameProcessed; //Points to the top of the processed stack
-
-
-/*Function to create the structure which will stock the Trame*/
+/* Function to create the structure which will stock the Trame */
 
 ElementTrame* init_tram(){
   ElementTrame* elementtrame = malloc(sizeof(*elementtrame));
@@ -26,9 +21,10 @@ ElementTrame* init_tram(){
   return elementtrame;
 }
 
-/*Function to remove the first element of the Trame list*/
+/* Function to remove the first element of the Trame list */
 
 void pop(ElementTrame * toptrame){
+  
   if(toptrame == NULL){
     exit(EXIT_FAILURE);
   }
@@ -38,8 +34,7 @@ void pop(ElementTrame * toptrame){
   free(TrameDelete);
 }
 
-/*Function to add elemenent to Trame list*/
-
+/* Function to add elemenent to Trame list */
 void pileup(ElementTrame * toptrame, int incomingByte){
   ElementTrame * newElementTrame = malloc(sizeof(*newElementTrame ));
   if(newElementTrame == NULL){
@@ -51,3 +46,66 @@ void pileup(ElementTrame * toptrame, int incomingByte){
 }
 
 /*--------------------------------------------------------------------------------*/
+
+/* -==  Setup  ==- */
+
+void setup() {
+  //setup code, runs once :
+  Serial.begin(9600);
+}
+
+/*--------------------------------------------------------------------------------*/
+
+/* -==  Receiving a Trame / Getting the info  ==- */
+
+/* function that receives the message */
+
+int receive_message(){
+  int response; // 1: Time out / 2: ...
+  int i = 0;
+  int incomingByte = NULL;
+  //It waits to receive the start of the Trames
+  while(incomingByte != '%' && i<1000){
+    incomingByte = Serial.read();
+    i++;
+  }
+  //Checks if it didn't timeout
+  if(i<1000){
+    ElementTrame* TrameReception = init_tram();
+    i = 0;
+    while(Serial.available() > 0 && i!=1){
+      incomingByte = Serial.read();
+      //Checks if it received the end of a trame. Incase another trame is sent right after, or else we would get a huge stack of multiple trames
+      if(incomingByte == '@'){
+        incomingByte = Serial.read();
+        if(incomingByte == ':'){
+          if(incomingByte == '@'){
+            pileup(TrameReception,'@');
+            pileup(TrameReception,':');
+            pileup(TrameReception,'@');
+          }else{
+            pileup(TrameReception,'@');
+            pileup(TrameReception,':');
+            pileup(TrameReception,incomingByte);
+          }
+        }else{
+          pileup(TrameReception,'@');
+          pileup(TrameReception,incomingByte);
+        }
+      }else{
+        pileup(TrameReception,incomingByte);
+      }
+      //End of our checkup
+    }
+    response = AnalyseTrame(TrameReception);
+  }else{
+    response = 0;
+  }
+  return response;
+}
+
+/* function to extract the trame info / check it */
+
+int AnalyseTrame(ElementTrame* Trame){
+  //future code
+}
