@@ -1,5 +1,6 @@
-int LedRG = 13;   //Pin commanding Red and Green Led
-int LDR = 14;     //Pin receiving LDR value
+int LedRG = 13;                       //Pin commanding Red and Green Led
+int LDR = 14;                         //Pin receiving LDR value
+int ReceivedTrameInformation;         //The information our receive_message() extracts
 int HeaderLength = 6;
 int FooterLength = 3;
 int header[6] = {'%','&','D','D','A','P'};
@@ -68,9 +69,9 @@ void setup() {
 /* function that receives the message */
 
 int receive_message(){
+  int error = 0;
   int response; // 0: Time out / 1: Header error / 2: Footer error / 3: Error in the received Trame / 4: The info isn't recognised by our software / 5: info - Manual / 6: info - Nack / 7: info - Ack 
   int i = 0;
-  int j = 0;
   int incomingByte = NULL;
   //It waits to receive the start of the Trames
   while(incomingByte != header[0] && i<1000){
@@ -78,38 +79,50 @@ int receive_message(){
     i++;
   }
   //Checks if it didn't timeout
+  Serial.print("Received Byte: ");
+  Serial.println(incomingByte);
   if(i<1000){
     //Checks the 'HeaderLength' first element of the beginning of the trame
     for(i=0;i<HeaderLength-1;i++){
+      Serial.print("Received Byte: ");
+      Serial.println(incomingByte);
       if(Serial.read() != header[1+i]){
-        i = 10; //error from header
+        error = 1; //error from header
       }
     }
     //If i != we can check the rest of the trame
-    if( i != 10 ){
+    if( error == 0 ){
       ElementTrame* TrameReception = init_tram();
-      while((Serial.available() > 0) && (i!=2)){
+      while((Serial.available() > 0) && (error == 0)){
         incomingByte = Serial.read();
+        Serial.print("Received Byte: ");
+        Serial.println(incomingByte);
         pileup(TrameReception,incomingByte);
         if(incomingByte == footer[0]){
-          i = 0;
-          while((i<FooterLength) && (incomingByte!=footer[i])){
+          for(i=1;i<FooterLength-1;i++)
             incomingByte = Serial.read();
+            Serial.print("Received Byte: ");
+            Serial.println(incomingByte);
             pileup(TrameReception,incomingByte);
-            i++;
+            if(footer[i] != incomingByte){
+              error = 1;
+            }
           }
-        }
+          if(i == (FooterLength - 1)){
+            error=1;//is the footer
+          }else{
+            error=0;//not the footer
+          }
       }
-      if(i==2){
-        for(j=0;j<3;j++){
+      if(error == 1){
+        for(i=0;i<3;i++){
           pop(TrameReception);
         }
         response = AnalyseTrame(TrameReception);
       }else{
         response = 2; // Footer error
-      }
+      }  
     }else{
-    //If i = 10 the the header had a problem
       response = 1; // Header error
     }
   }else{
@@ -171,6 +184,41 @@ void send_value(float value){
 
 void loop() {
   // main code, runs repeatedly :
-  
+  // 0: Time out / 1: Header error / 2: Footer error / 3: Error in the received Trame / 4: The info isn't recognised by our software / 5: info - Manual / 6: info - Nack / 7: info - Ack
+  ReceivedTrameInformation = receive_message();
+  if(ReceivedTrameInformation == 0){
+    Serial.println("ReceivedTrameInformation: Time out");
+  }else{
+    if(ReceivedTrameInformation == 1){
+      Serial.println("ReceivedTrameInformation: Header error");
+    }else{
+      if(ReceivedTrameInformation == 2){
+        Serial.println("ReceivedTrameInformation: Footer error");
+      }else{
+        if(ReceivedTrameInformation == 3){
+          Serial.println("ReceivedTrameInformation: Error in the received Trame");
+        }else{
+          if(ReceivedTrameInformation == 4){
+            Serial.println("ReceivedTrameInformation: The info isn't recognised by our software");
+          }else{
+            if(ReceivedTrameInformation == 5){
+              Serial.println("ReceivedTrameInformation: info - Manual");
+            }else{
+              if(ReceivedTrameInformation == 6){
+                Serial.println("ReceivedTrameInformation: info - Nack");
+              }else{
+                if(ReceivedTrameInformation == 7){
+                  Serial.println("ReceivedTrameInformation: info - Ack");
+                }else{
+                  Serial.println("ReceivedTrameInformation: UNKNOWN");
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  delay(1000);
 
 }
