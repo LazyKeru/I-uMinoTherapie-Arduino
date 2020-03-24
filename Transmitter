@@ -1,7 +1,7 @@
 int LedRG = 13;   //Pin commanding Red and Green Led
 int LDR = 14;     //Pin receiving LDR value
 int HeaderLength = 6;
-int FooterLenght = 3;
+int FooterLength = 3;
 int header[6] = {'%','&','D','D','A','P'};
 int footer[3] = {'@',':','@'};
 
@@ -68,7 +68,7 @@ void setup() {
 /* function that receives the message */
 
 int receive_message(){
-  int response; // 0: Time out / 1: Header error / 2: Footer error
+  int response; // 0: Time out / 1: Header error / 2: Footer error / 3: Error in the received Trame / 4: The info isn't recognised by our software / 5: info - Manual / 6: info - Nack / 7: info - Ack 
   int i = 0;
   int j = 0;
   int incomingByte = NULL;
@@ -93,7 +93,7 @@ int receive_message(){
         pileup(TrameReception,incomingByte);
         if(incomingByte == footer[0]){
           i = 0;
-          while((i<FooterLenght) && (incomingByte!=footer[i])){
+          while((i<FooterLength) && (incomingByte!=footer[i])){
             incomingByte = Serial.read();
             pileup(TrameReception,incomingByte);
             i++;
@@ -121,5 +121,56 @@ int receive_message(){
 /* function to extract the trame info / check it */
 
 int AnalyseTrame(ElementTrame* Trame){
+  int rep;
+  int info = NULL;
+  int ExpectedLength;
+  int Length = 0;
+  ElementTrame* TrameChecked = init_tram();
+  //the 2 last Byte tells us the expected length of the Tram body length in byte
+  ExpectedLength = Trame->Byte;
+  pop(Trame);
+  ExpectedLength = Trame->Byte * 10 + ExpectedLength;
+  pop(Trame);
+  ExpectedLength = ExpectedLength - HeaderLength - FooterLength + 1;
+  //It first checks if it received the full trame, by checking the lenght accordingly to the bit of control. And it put the first received byte at the top of the stack.
+  while(Trame->suivant != NULL){
+    Length++;
+    pileup(TrameChecked,Trame->Byte);
+    pop(Trame);
+  }
+  if(Length == ExpectedLength){
+    //Extracts one Byte. the possible info that can be received, can be stored in one Byte. We could have made a list of the info received, which are seperated by '+' between each other
+    pop(TrameChecked); //Removes the * Byte
+    info = TrameChecked->Byte;
+    if(info == '!'){
+      rep = 7; //info: Ack
+    }else{
+      if(info == '?'){
+        rep = 6; //info: Nack
+      }else{
+        if(info == '€'){
+          rep = 5; //info: Manual
+        }else{
+          rep = 4; //The info isn't recognised by our software
+        }
+      }
+    }
+  }{
+    rep = 3; //The Tram has missing info
+  }
+  return rep;
+}
+
+void send_message(char message){
   
+}
+
+void send_value(float value){
+  
+}
+
+void loop() {
+  // main code, runs repeatedly :
+  
+
 }
