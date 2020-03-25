@@ -176,31 +176,10 @@ int AnalyseTrame(ElementTrame* Trame){
   return rep;
 }
 
-void send_message(char message){
-  
-}
+/* functions that communicates the type of info it received */
 
-void send_value(float value){
-  
-}
-/*--------------------------------------------------------------------------------*/
-/*---------------------------------------------------------------------------------
-    Expected TRAM:
-      So you can test on your SERIAL without the other board:
-        
-          Ack:  %&DDAP*!$13@:@
-          Nack: %&DDAP*?$13@:@
-          Man:  %&DDAP*€$13@:@
-
-
-----------------------------------------------------------------------------------*/
-/*--------------------------------------------------------------------------------*/
-
-
-void loop() {
-  // main code, runs repeatedly :
+void ReceivedInfoFromTrame(int ReceivedTrameInformation){
   // 0: Time out / 1: Header error / 2: Footer error / 3: Error in the received Trame / 4: The info isn't recognised by our software / 5: info - Manual / 6: info - Nack / 7: info - Ack
-  ReceivedTrameInformation = receive_message();
   if(ReceivedTrameInformation == 0){
     Serial.println("ReceivedTrameInformation: Time out");
   }else{
@@ -234,6 +213,78 @@ void loop() {
       }
     }
   }
+}
+
+/*--------------------------------------------------------------------------------*/
+
+/* -==  Receiving a Trame / Getting the info  ==- */
+
+void SendTrame(ElementTrame* Trame){
+  Serial.print("Sending trame : ");
+  while(Trame->next != NULL){
+    //This is the only usefull serial print !!
+    Serial.print(Trame->Byte);
+    Serial.print(" ");
+    pop(&Trame);
+  }
+  Serial.println("");
+  pop(&Trame);
+}
+
+ElementTrame* FormTrame(int* body, int bodylength){
+  ElementTrame* Trame = init_tram();
+  int i;
+  int tramelength;
+  //add foot of Trame:
+  for(i=0;i<FooterLength;i++){
+    pileup(&Trame,footer[FooterLength-i-1]);
+  }
+  tramelength = FooterLength+HeaderLength+bodylength;
+  pileup(&Trame,tramelength % 10);
+  pileup(&Trame,(tramelength - tramelength % 10) / 10);
+  //add body
+  for(i=0;i<bodylength;i++){
+    pileup(&Trame,body[bodylength-i-1]);
+  }
+  //add foot
+  for(i=0;i<HeaderLength-1;i++){
+    pileup(&Trame,header[HeaderLength-i-1]);
+  }
+  return Trame;
+}
+
+void send_value(float value){
+  
+}
+/*--------------------------------------------------------------------------------*/
+/*---------------------------------------------------------------------------------
+    Expected TRAM:
+      So you can test on your SERIAL without the other board:
+        
+          Ack:  %&DDAP*!$13@:@
+          Nack: %&DDAP*?$13@:@
+          Man:  %&DDAP*#$13@:@
+
+       other quick test:
+
+          header error: %&DAAP*#$13@:@
+          footer error: %&DDAP*#$13
+          damaged tram: %&DDAP*asdavhsdfg€$13@:@
+          wrong info:   %&DDAP*#$13@:@
+          
+
+
+----------------------------------------------------------------------------------*/
+/*--------------------------------------------------------------------------------*/
+
+
+void loop() {
+  // main code, runs repeatedly :
+  int bodylength = 4;
+  int body[bodylength] = {'a','b','c','d'};
+  SendTrame(FormTrame(body,bodylength));
+  ReceivedTrameInformation = receive_message();
+  ReceivedInfoFromTrame(ReceivedTrameInformation);
   delay(1000);
   return;
 }
