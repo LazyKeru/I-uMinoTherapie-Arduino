@@ -1,5 +1,5 @@
 //Connected modules:
-int LedRG = 13;                       //Pin commanding Red and Green Led
+int LedRG = 2;                       //Pin commanding Red and Green Led
 int LDR = 14;                         //Pin receiving LDR value
 
 //Tram info:
@@ -9,10 +9,10 @@ int header[HeaderLength] = {'%','&','D','D','A','P'};
   /*Footer info*/
 const int FooterLength = 3;
 int footer[FooterLength] = {'@',':','@'};
-  /*Nack's body info*/
+  /*Nack's info*/
 const int bodyNacklength = 3;
 int bodyNack[bodyNacklength] = {'*','?','$'};
-  /*Footer info*/
+  /*Lux info*/
 const int bodyLuxlength = 4;
 int bodyLux[bodyLuxlength] = {'*','V','V','$'};
 
@@ -60,7 +60,9 @@ void pop(ElementTrame ** toptrame){
 void pileup(ElementTrame ** toptrame, int incomingByte){
   ElementTrame* newElementTrame;
   newElementTrame = (ElementTrame*)malloc(sizeof(ElementTrame));
-  
+  if(newElementTrame == NULL){
+    exit(EXIT_FAILURE);
+  }
   newElementTrame->Byte = incomingByte;
   newElementTrame->next = *toptrame;
   *toptrame = newElementTrame;
@@ -276,8 +278,9 @@ int TramReception(int info){
   ReceivedInfoFromTrame(info);
   if(info < 5){
     SendTrame(FormTrame(bodyNack,bodyNacklength));
+    delay(1000);
     info = TramReception(info);
-  }
+  }else{delay(1000);}
   return info;
 }
 
@@ -285,12 +288,15 @@ int TramReception(int info){
 
 void ManualTest(int Information){
   while(Information < 6){
+    digitalWrite(LedRG,LOW);
     Serial.println("Checking if out of manuel mode: ");
     //turn led red
     //check Reception
     Information = receive_message();
     ReceivedInfoFromTrame(Information);
+    delay(1000);
   }
+  digitalWrite(LedRG,HIGH);
 }
 
 /*--------------------------------------------------------------------------------*/
@@ -327,17 +333,22 @@ void ManualTest(int Information){
 void setup() {
   //setup code, runs once :
   Serial.begin(9600);
-  pinMode(13, OUTPUT);
+  pinMode(LedRG, OUTPUT);
   Serial.println("Starting Software :");
   int i;
   for(i=10;i>0;i--){
+    if(i%2==1){
+      digitalWrite(LedRG,HIGH);
+    }else{
+      digitalWrite(LedRG,LOW);
+    }
     delay(1000);
     Serial.print(i);
     Serial.print(", ");
   }
   delay(1000);
   Serial.println(i);
-  Serial.println("Starting the loop()");
+  Serial.println("Starting the loop():");
   ReceivedTrameInformation = receive_message();
 }
 
@@ -348,6 +359,7 @@ void loop() {
   // 0: Time out / 1: Header error / 2: Footer error / 3: Error in the received Trame / 4: The info isn't recognised by our software / 5: info - Manual / 6: info - Nack / 7: info - Ack
   int i;
   //Loop to send Lux value, while the information received isn't Ack.
+  digitalWrite(LedRG,HIGH);
   do{
     if(ReceivedTrameInformation==5){ManualTest(ReceivedTrameInformation);}
     LuxValue = GetLux();
@@ -355,6 +367,7 @@ void loop() {
     bodyLux[2] = 'V';
     Serial.println("Sending lux Value: ");
     SendTrame(FormTrame(bodyLux,bodyLuxlength));
+    delay(1000);
     ReceivedTrameInformation = TramReception(ReceivedTrameInformation);
   }while(ReceivedTrameInformation != 7);
   Serial.println("Message was received.");
