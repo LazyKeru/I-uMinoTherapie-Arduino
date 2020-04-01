@@ -31,6 +31,8 @@ typedef struct ElementTrameStructure{
   struct ElementTrameStructure * next = NULL;
 }ElementTrame;
 
+// ElementTrame doesn't work well on tinkercad. So when using tinkercad, replace ElementTrame by struct ElementTrameStructure
+
 /* Function to create the structure which will stock the Trame */
 
 ElementTrame* init_tram(){
