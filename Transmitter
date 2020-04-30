@@ -1,10 +1,10 @@
-#include <Arduino.h> //Had to include the Arduino.h library, or else we couldn't define or detect or pointers in the NULL State.
+#include <Arduino.h> //Had to include the Arduino.h library, or else we couldn't define or detect our pointers in the NULL State.
 
 //Connected modules:
 const int LedRG = 13;                       //Pin commanding Red and Green Led
 const int LDR = 14;                         //Pin receiving LDR value
 
-//Tram info:
+/* -== ID of Trame ==- */
 /*Header info*/
 const int headerID_Length PROGMEM = 4;
 const int headerID[headerID_Length] = {'D', 'D', 'A', 'P'};
@@ -59,7 +59,7 @@ ElementTrame* init_tram() {
 
 void pop(ElementTrame ** top_trame) {
   ElementTrame * next_element_trame = NULL;
-  if (top_trame == NULL) {
+  if (*top_trame == NULL) {
     exit(EXIT_FAILURE);
   }
   next_element_trame = (*top_trame)->next;
@@ -89,7 +89,7 @@ void delete_trame(ElementTrame * top_trame) {
   pop(&top_trame);
 }
 
-void show_trame_but_delete_it(ElementTrame * top_trame) { //For debugging. Managed to see that Arduino couldn't detect the NULL pointer without it's library.
+void show_trame_but_delete_it(ElementTrame * top_trame) { //For debugging. Managed to see that Arduino couldn't detect the NULL pointer without it's library. Or that a tram changed states from one function to another (never figured why, I just went around the problem)
   Serial.print("The Tram:");
   while(top_trame->next != NULL){ //Erases the trame_checked
     print_received_byte(top_trame->Byte);
@@ -104,6 +104,8 @@ void show_trame_but_delete_it(ElementTrame * top_trame) { //For debugging. Manag
 /*--------------------------------------------------------------------------------*/
 
 /* -==  Receiving a Trame / Getting the info  ==- */
+
+/* function that prints one byte */
 
 int print_received_byte(int incoming_byte) {
   Serial.print(incoming_byte, HEX);
@@ -232,48 +234,49 @@ int pileup_X_tram_and_analyse_footer(const int * footer, const int footerLength,
 }
 
 int analyse_1st_trame(ElementTrame * trame_reception) {
+  ElementTrame * trame_checked = init_tram();
   int i;
   for (i = 0; i < footerLength_1st_Trame; i++) {
     pop(&trame_reception);
   } //Removes footer
   int res;
   unsigned int x_MSB, x_LSB;
-  int number_of_1_bit_expected, bit_value;
+  int number_of_1_bit_expected = -1; 
+  int bit_value = 0;
   int counted_1_bit = 0;
-  x_LSB = trame_reception->Byte;
-  pop(&trame_reception);
-  x_MSB = trame_reception->Byte;
-  pop(&trame_reception);
-  number_of_1_bit_expected = bit_sift_combine(x_MSB, x_LSB);
-  ElementTrame * trame_checked = init_tram();
-  while (trame_reception->next != NULL) {
-    for (i = 0; i < 8; i++) { //Goes through the 8 bit of 1 byte and adds up the number of counted '1' bit
-      bit_value = bitRead(trame_reception->Byte, (1));
-      if (bit_value == 1) {
-        counted_1_bit = counted_1_bit + 1;
+  if(trame_reception->next != NULL){
+    x_LSB = trame_reception->Byte;
+    pop(&trame_reception);
+    if(trame_reception->next != NULL){
+      x_MSB = trame_reception->Byte;
+      pop(&trame_reception);
+      number_of_1_bit_expected = bit_shift_combine(x_MSB, x_LSB);
+      if(trame_reception->next != NULL){
+        pop(&trame_reception);
+        do{
+          for (i = 0; i < 8; i++) { //Goes through the 8 bit of 1 byte and adds up the number of counted '1' bit
+            bit_value = bitRead(trame_reception->Byte, (i));
+            if (bit_value == 1) {
+              counted_1_bit = counted_1_bit + 1;
+            }
+          }
+          pileup(&trame_checked, trame_reception->Byte);
+          pop(&trame_reception);
+        }while(trame_reception->next != NULL && trame_reception->Byte != '*'); //Ends loop when it arrives at the end of the tram (then there is most likely an error) or that the next byte is '*'
+        Serial.print("expected bit: ");
+        Serial.println(counted_1_bit);
+        Serial.print("Received bit: ");
+        Serial.println(number_of_1_bit_expected);
       }
     }
-    pileup(&trame_checked, trame_reception->Byte);
-    pop(&trame_reception);
   }
-  if (number_of_1_bit_expected == counted_1_bit) { //If the number of 1 bit concords, then the message is most likely undammaged
-    /* *reminder*
-
-        - Format of the expected Tram -
-
-        Start: %&DDAP*[0x7F7F]+0+00$[Somme des bits a 1 des champs du corps]@:@
-        Manual: %&DDAP*[0xFAFA]+[0xAA]+00$[Somme des bits a 1 des champs du corps]@:@
-        Automatic: %&DDAP*[0xFAFA]+[0xDD]+00$[Somme des bits a 1 des champs du corps]@:@
-        Lux: %&DDAP*[0xFAFA]+0+[Lux Value]$[Somme des bits a 1 des champs du corps]@:@
-
-        However we do not care about the Lux and Start message, as we are the one to send it.
-        So we only care about the 0xAA and 0xDD. Which tells us if we're in manual or automatic mode
-
-        So we only analyse a small part of the Tram
-
-    */
-    for (i = 0; i < 3; i++) {
-      pop(&trame_checked);
+  delete_trame(trame_reception); //Delete the trame of reception which we finished using
+  //show_trame_but_delete_it(trame_checked); Checed the we extracted the part we wanted. So in the best case the bytes between '*' and '$'
+  if(number_of_1_bit_expected == counted_1_bit){ //If the number of 1 bit concords, then the message is most likely undammaged
+    for(i=0;i<3;i++){ //Remove the 2 bytes for 'affichage Text' and 1 byte for the '+'
+      if(trame_checked->next != NULL){
+        pop(&trame_checked);
+      }
     }
     if (trame_checked->Byte == 0xAA) {
       res = 5; // info - Manual
@@ -285,11 +288,11 @@ int analyse_1st_trame(ElementTrame * trame_reception) {
   } else {
     res = 3; //The Tram's body is damaged
   }
-  delete_trame(trame_checked);
+  //delete_trame(trame_checked);
   return res;
 }
 
-int bit_sift_combine( unsigned int x_MSB, unsigned int x_LSB)
+int bit_shift_combine( unsigned int x_MSB, unsigned int x_LSB)
 {
   int combined;
   combined = x_MSB;              //send x_high to rightmost 8 bits
@@ -341,7 +344,8 @@ int analyse_2nd_trame(ElementTrame * trame) {
   return res;
 }
 
-/* functions that communicates the type of info it received */
+
+/* functions that communicates the type of info it received | It's only informative */
 
 void received_information_from_Trame(int Information) {
   // 0: Time out / 1: Header error / 2: Footer error / 3: Error in the received Trame / 4: The info isn't recognised by our software
@@ -393,7 +397,7 @@ void received_information_from_Trame(int Information) {
     2 type of trams:
       1st type:
 
-          Start: %&DDAP*[0x7F7F]+0+00$[Somme des bits a 1 des champs du corps]@:@
+          Start: %&DDAP*[0x7F7F]+0+00$[Somme des bits a 1 des champs '[0x7F7F]+0+00' donc 28 ou 0x007F]@:@
           Manuel: %&DDAP*[0xFAFA]+[0xAA]+00$[Somme des bits a 1 des champs du corps]@:@
           Automatique: %&DDAP*[0xFAFA]+[0xDD]+00$[Somme des bits a 1 des champs du corps]@:@
           Lux: %&DDAP*[0xFAFA]+0+[Lux Value]$[Somme des bits a 1 des champs du corps]@:@
