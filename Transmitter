@@ -3,6 +3,7 @@
 //Connected modules:
 const int LedRG = 13;                       //Pin commanding Red and Green Led
 const int LDR = 14;                         //Pin receiving LDR value
+int information_received_global;            //Information
 
 /* -== ID of Trame ==- */
 /*Header info*/
@@ -13,6 +14,10 @@ const int headerID[headerID_Length] = {'D', 'D', 'A', 'P'};
 /*Header info*/
 const int headerLength_1st_Trame = 2;
 const int header_1st_Trame[headerLength_1st_Trame] = {'%', '&'};
+
+/*Body info*/
+const int bodyLength_1st_Trame = 11;
+unsigned int body_1st_Trame[bodyLength_1st_Trame] = {'*',0xFF,0xFF,'+',0xFF,'+',0xFF,0xFF,'$',0xFF,0xFF};
 
 /*Footer info*/
 const int footerLength_1st_Trame = 3;
@@ -82,21 +87,14 @@ void pileup(ElementTrame ** top_trame, int incomingByte) {
   return;
 }
 
+/* Function to delete a Trame */
+
 void delete_trame(ElementTrame * top_trame) {
   while (top_trame->next != NULL) { //Erases the trame_checked
     pop(&top_trame);
   }
   pop(&top_trame);
-}
-
-void show_trame_but_delete_it(ElementTrame * top_trame) { //For debugging. Managed to see that Arduino couldn't detect the NULL pointer without it's library. Or that a tram changed states from one function to another (never figured why, I just went around the problem)
-  Serial.print("The Tram:");
-  while(top_trame->next != NULL){ //Erases the trame_checked
-    print_received_byte(top_trame->Byte);
-    pop(&top_trame);
-  }
-  pop(&top_trame);
-  Serial.print(" done");
+  return;
 }
 
 /*--------------------------------------------------------------------------------*/
@@ -108,14 +106,14 @@ void show_trame_but_delete_it(ElementTrame * top_trame) { //For debugging. Manag
 /* function that prints one byte */
 
 int print_received_byte(int incoming_byte) {
-  Serial.print(incoming_byte, HEX);
-  Serial.print(" ");
+  //Serial.print(incoming_byte, HEX); //Remove comments when you want to see the received byte
+  //Serial.print(" ");
 }
 
 /* function that receives the message */
 
 int receive_trame_info() {
-  int response;   // 0: Time out / 1: Header error / 2: Footer error / 3: Error in the received Trame / 4: The info isn't recognised by our software
+  int res;   // 0: Time out / 1: Header error / 2: Footer error / 3: Error in the received Trame / 4: The info isn't recognised by our software
   int i = 0;      // 5: info - Manual / 6: info - Automatic / 7: info - Nack / 8: info - Ack
   int incoming_byte = -1;
   int trame_type = -1; // 1: 1st trame type / 2: 2nd trame type
@@ -138,28 +136,41 @@ int receive_trame_info() {
     //freeRAM();
     if(trame_type == 1){ //Checks the header of the trame
       //Serial.println("Checks the header of 1st Trame.");
-      response = receive_X_trame(headerLength_1st_Trame, header_1st_Trame);
+      res = receive_X_trame(header_1st_Trame, headerLength_1st_Trame);
     }else{
       //Serial.println("Checks the header of 2nd Trame.");
-      response = receive_X_trame(headerLength_2nd_Trame, header_2nd_Trame);
+      res = receive_X_trame(header_2nd_Trame, headerLength_2nd_Trame);
     }
-    if(response == -1){ //Continues to analyse the trame if there is no header error
+    if(res == -1){ //Continues to analyse the trame if there is no header error
       //Serial.println("No header Error.");
       //freeRAM();
+      ElementTrame * trame = init_tram(); //Stocks the received element in a linked structure
       if (trame_type == 1){ //Checks the footer of the trame and piles up the rest of the trame
-        response = pileup_X_tram_and_analyse_footer(footer_1st_Trame, footerLength_1st_Trame, trame_type);
+        res = pileup_X_tram_and_analyse_footer(footer_1st_Trame, footerLength_1st_Trame, &trame);
       }else{
-        response = pileup_X_tram_and_analyse_footer(footer_2nd_Trame, footerLength_2nd_Trame, trame_type);
+        res = pileup_X_tram_and_analyse_footer(footer_2nd_Trame, footerLength_2nd_Trame, &trame);
+      }
+      if(res == -1){
+        //Serial.println("The footer is correct.");
+        if (trame_type == 1){
+          //Serial.println("Analyse 1st trame");
+          res = analyse_1st_trame(&trame);
+        }else{
+          //Serial.println("Analyse 2nd trame");
+          res = analyse_2nd_trame(&trame);
+        }
       }
       //Use to call the analyse_1st_trame() and analyse_2nd_trame() functions. However there was a problem, that the change brought to the Tram declared in this variable wouldn't be changed by the other called functions.
     }
   }else{
-    response = 0; // Time out
+    res = 0; // Time out
   }
-  return response;
+  Serial.println("");
+  received_information_from_Trame(res);
+  return res;
 }
 
-int receive_X_trame(const int headerLength, const int * header) {
+int receive_X_trame(const int * header, const int headerLength) {
   int res = -1;
   int incoming_byte = 0;
   int i = 0;
@@ -187,90 +198,69 @@ int receive_X_trame(const int headerLength, const int * header) {
 }
 
 
-int pileup_X_tram_and_analyse_footer(const int * footer, const int footerLength, int trame_type) {
+int pileup_X_tram_and_analyse_footer(const int * footer, const int footerLength, ElementTrame ** trame){
   //Serial.println("Receives the rest of the Trame and checks for the footer.");
-  ElementTrame * trame = init_tram(); //Stocks the received element in a linked structure
-  int res = -1;
+  int res = 2; //If we don't find the good footer, than there is a footer error
   int incoming_byte;
   int i;
-  /*Serial.print("The footer's expected bytes in HEX value: ");
-  for (i = 0; i < 3; i++) {
-    Serial.println(footer[i], HEX);
-    Serial.print(" ");
-  }*/
-  while ((Serial.available() > 0) && (res == -1)) {
+  while ((Serial.available() > 0) && (res == 2)) {
     incoming_byte = Serial.read();
-    pileup(&trame, incoming_byte);
-    print_received_byte(trame->Byte);
+    pileup(trame, incoming_byte);
+    print_received_byte((*trame)->Byte);
     if (incoming_byte == footer[0]) { //Checks for bytes similar to the start of our footer's type
       //Serial.println("This byte is similar to the start of our footer's starting byte.");
       for (i = 1; (i < footerLength); i++) { //Checks the next 'footerLength' bytes, and compares them to the footer
         incoming_byte = Serial.read();
-        pileup(&trame, incoming_byte);
-        print_received_byte(trame->Byte);
-        if ((footer[i] == trame->Byte) && (i == (footerLength - 1))) {
-          res = 1; //If the footer has 0 errors it changes out of it's NULL State
+        pileup(trame, incoming_byte);
+        print_received_byte((*trame)->Byte);
+        if ((footer[i] == (*trame)->Byte) && (i == (footerLength - 1))) {
+          res = -1; //If the footer has 0 errors it changes back to it's '-1' State
           //Serial.print("Received footer with no Error");
         }
       }
     }
   }
-  if (res == -1){
-    res = 2;
-    //Serial.println("The footer has an error.");
-    delete_trame(trame); //free's the trame collected info, as we won't use it, since it's damage.
-  }//Footer error
-  if(res == 1){
-    //Serial.println("The footer is correct.");
-    if (trame_type == 1){
-      //Serial.println("Analyse 1st trame");
-      res = analyse_1st_trame(trame);
-    }else{
-      //Serial.println("Analyse 2nd trame");
-      res = analyse_2nd_trame(trame);
-    }
-  }
   return res;
 }
 
-int analyse_1st_trame(ElementTrame * trame_reception) {
+int analyse_1st_trame(ElementTrame ** trame_reception) {
   ElementTrame * trame_checked = init_tram();
   int i;
   for (i = 0; i < footerLength_1st_Trame; i++) {
-    pop(&trame_reception);
+    pop(trame_reception);
   } //Removes footer
   int res;
   unsigned int x_MSB, x_LSB;
   int number_of_1_bit_expected = -1; 
   int bit_value = 0;
   int counted_1_bit = 0;
-  if(trame_reception->next != NULL){
-    x_LSB = trame_reception->Byte;
-    pop(&trame_reception);
-    if(trame_reception->next != NULL){
-      x_MSB = trame_reception->Byte;
-      pop(&trame_reception);
+  if((*trame_reception)->next != NULL){
+    x_LSB = (*trame_reception)->Byte;
+    pop(trame_reception);
+    if((*trame_reception)->next != NULL){
+      x_MSB = (*trame_reception)->Byte;
+      pop(trame_reception);
       number_of_1_bit_expected = bit_shift_combine(x_MSB, x_LSB);
-      if(trame_reception->next != NULL){
-        pop(&trame_reception);
+      if((*trame_reception)->next != NULL){
+        pop(trame_reception);
         do{
           for (i = 0; i < 8; i++) { //Goes through the 8 bit of 1 byte and adds up the number of counted '1' bit
-            bit_value = bitRead(trame_reception->Byte, (i));
+            bit_value = bitRead((*trame_reception)->Byte, (i));
             if (bit_value == 1) {
               counted_1_bit = counted_1_bit + 1;
             }
           }
-          pileup(&trame_checked, trame_reception->Byte);
-          pop(&trame_reception);
-        }while(trame_reception->next != NULL && trame_reception->Byte != '*'); //Ends loop when it arrives at the end of the tram (then there is most likely an error) or that the next byte is '*'
-        Serial.print("expected bit: ");
-        Serial.println(counted_1_bit);
-        Serial.print("Received bit: ");
-        Serial.println(number_of_1_bit_expected);
+          pileup(&trame_checked, (*trame_reception)->Byte);
+          pop(trame_reception);
+        }while((*trame_reception)->next != NULL && (*trame_reception)->Byte != '*'); //Ends loop when it arrives at the end of the tram (then there is most likely an error) or that the next byte is '*'
+        //Serial.print("expected bit: ");
+        //Serial.println(counted_1_bit, DEC);
+        //Serial.print("Received bit: ");
+        //Serial.println(number_of_1_bit_expected, DEC);
       }
     }
   }
-  delete_trame(trame_reception); //Delete the trame of reception which we finished using
+  delete_trame(*trame_reception); //Delete the trame of reception which we finished using
   //show_trame_but_delete_it(trame_checked); Checed the we extracted the part we wanted. So in the best case the bytes between '*' and '$'
   if(number_of_1_bit_expected == counted_1_bit){ //If the number of 1 bit concords, then the message is most likely undammaged
     for(i=0;i<3;i++){ //Remove the 2 bytes for 'affichage Text' and 1 byte for the '+'
@@ -288,7 +278,7 @@ int analyse_1st_trame(ElementTrame * trame_reception) {
   } else {
     res = 3; //The Tram's body is damaged
   }
-  //delete_trame(trame_checked);
+  delete_trame(trame_checked);
   return res;
 }
 
@@ -301,11 +291,11 @@ int bit_shift_combine( unsigned int x_MSB, unsigned int x_LSB)
   return combined;               //Credits: Matthew - http://projectsfromtech.blogspot.com/2013/09/combine-2-bytes-into-int-on-arduino.html
 }
 
-int analyse_2nd_trame(ElementTrame * trame) {
+int analyse_2nd_trame(ElementTrame ** trame_reception) {
   int i = 0;
   for (i = 0; i < footerLength_1st_Trame; i++) {
     //print_received_byte(trame->Byte); //Used to see what we had in our linked list
-    pop(&trame);
+    pop(trame_reception);
   } //Removes footer
   int res = -1;
   int info;
@@ -315,12 +305,13 @@ int analyse_2nd_trame(ElementTrame * trame) {
   //Serial.print("Expected length of the trame_reception's body : ");
   //Serial.println(expected_length);
   //It checks that the trame isn't longer than expected
-  while (trame->next != NULL) {
+  while ((*trame_reception)->next != NULL) {
     real_length++;
-    print_received_byte(trame->Byte);
-    pileup(&trame_checked, trame->Byte);
-    pop(&trame);
+    print_received_byte((*trame_reception)->Byte);
+    pileup(&trame_checked, (*trame_reception)->Byte);
+    pop(trame_reception);
   }
+  delete_trame(*trame_reception);
   //Serial.print("Actual length : ");
   //Serial.println(real_length);
   if(real_length == expected_length){
@@ -340,10 +331,164 @@ int analyse_2nd_trame(ElementTrame * trame) {
     res = 3; //The Tram's body is damaged
   }
   delete_trame(trame_checked);
-  delete_trame(trame);
   return res;
 }
 
+/*--------------------------------------------------------------------------------*/
+/*================================================================================*/
+/*--------------------------------------------------------------------------------*/
+
+/* -==  Sending a Trame  ==- */
+
+/* Send a trame */
+
+void send_trame(ElementTrame ** trame){
+  Serial.print("Sending trame : ");
+  while((*trame)->next != NULL){
+    Serial.print((*trame)->Byte, HEX);//This is the only usefull serial print !!
+    //Serial.print(" "); //Will need to remove. It's to see the trame more clearly
+    pop(trame);
+  }
+  Serial.print(" - ");
+  delete_trame(*trame);
+  return;
+}
+
+/* function add's X tab to the trame */
+
+void add_X_tab_to_trame(const int * x, const int xLength, ElementTrame ** trame){
+  int i;
+  for(i=0;i<xLength;i++){
+    pileup(trame,x[xLength-i-1]);
+  }
+  return;
+}
+
+void add_X_tab_unsigned_to_trame(unsigned int * x, const int xLength, ElementTrame ** trame){
+  int i;
+  for(i=0;i<xLength;i++){
+    pileup(trame,x[xLength-i-1]);
+  }
+  return;
+}
+
+/* function sends 2nd trame type, with one choosen byte (int message - ! or ?) */
+
+void send_2nd_trame(int message){
+  ElementTrame * trame = init_tram();
+  add_X_tab_to_trame(footer_2nd_Trame, footerLength_2nd_Trame, &trame);
+  pileup(&trame,message);
+  add_X_tab_to_trame(headerID,headerID_Length,&trame);
+  add_X_tab_to_trame(header_2nd_Trame, headerLength_2nd_Trame, &trame);
+  send_trame(&trame);
+  if(message == '!'){
+    Serial.println("Ack");
+  }else if(message == '!'){
+    Serial.println("Nack");
+  }else{
+    Serial.println("UNKNOWN");
+  }
+}
+
+void send_start(){
+  ElementTrame * trame = init_tram();
+  add_X_tab_to_trame(footer_1st_Trame, footerLength_1st_Trame, &trame);
+  body_1st_Trame[1] = 0x7F;
+  body_1st_Trame[2] = 0x7F;
+  dec_shift_to_2_bytes(&body_1st_Trame[9], &body_1st_Trame[10], number_of_1_bit());
+  add_X_tab_unsigned_to_trame(body_1st_Trame, bodyLength_1st_Trame, &trame);
+  add_X_tab_to_trame(headerID,headerID_Length,&trame);
+  add_X_tab_to_trame(header_1st_Trame, headerLength_1st_Trame, &trame);
+  send_trame(&trame);
+  Serial.println("Start");
+}
+
+void send_lux(int lux){
+  ElementTrame * trame = init_tram();
+  add_X_tab_to_trame(footer_1st_Trame, footerLength_1st_Trame, &trame);
+  body_1st_Trame[1] = 0xFA;
+  body_1st_Trame[2] = 0xFA;
+  dec_shift_to_2_bytes(&body_1st_Trame[6], &body_1st_Trame[7], lux);
+  dec_shift_to_2_bytes(&body_1st_Trame[9], &body_1st_Trame[10], number_of_1_bit());
+  add_X_tab_unsigned_to_trame(body_1st_Trame, bodyLength_1st_Trame, &trame);
+  add_X_tab_to_trame(headerID,headerID_Length,&trame);
+  add_X_tab_to_trame(header_1st_Trame, headerLength_1st_Trame, &trame);
+  send_trame(&trame);
+  Serial.println("Lux");
+}
+
+int number_of_1_bit(){
+  int counted_1_bit = 0;
+  int i,j;
+  for(i=1;i<bodyLength_1st_Trame-3;i++){ //Goes through the byte between '*' and '$' of the 1st trame type
+    for (j = 0; j < 8; j++) { //Goes through the 8 bit of 1 byte and adds up the number of counted '1' bit
+      if ((bitRead(body_1st_Trame[i], j)) == 1) {
+        counted_1_bit = counted_1_bit + 1;
+      }
+    }
+  }
+  //Serial.print("counted_1_bit: "); //Used for debugging
+  //Serial.println(counted_1_bit, DEC);
+  return counted_1_bit;
+}
+
+void dec_shift_to_2_bytes(unsigned int * x_MSB, unsigned int * x_LSB, int dec)
+{
+  *x_LSB = dec & 0xff;
+  *x_MSB = dec >> 8;
+}
+
+/*--------------------------------------------------------------------------------*/
+/*================================================================================*/
+/*--------------------------------------------------------------------------------*/
+
+/* -==  Getting Lux Value  ==- */
+
+/* function gets lux value */
+
+int get_lux(){
+
+}
+
+/*--------------------------------------------------------------------------------*/
+/*================================================================================*/
+/*--------------------------------------------------------------------------------*/
+
+/* -==  functions for debugging  ==- */
+
+/*--------------------------------------------------------------------------------*/
+
+/* function to blink */
+
+void bink_Yas() {
+  digitalWrite(LedRG, HIGH);   // turn the LED on (HIGH is the voltage level)
+  delay(1000);                       // wait for a second
+  digitalWrite(LedRG, LOW);    // turn the LED off by making the voltage LOW
+  delay(1000);
+  return;
+}
+
+/* function to check memory usage - credit : Mikael Patel */
+
+void freeRAM() {
+  extern int __heap_start, *__brkval;
+  int v;
+  Serial.print("Free memory is: ");
+  Serial.println((int) &v - (__brkval == 0 ? (int) &__heap_start : (int) __brkval));
+  return;
+}
+
+/* function which shows the content of a trame but delete's it at the same time */
+
+void show_trame_but_delete_it(ElementTrame * top_trame) { //For debugging. Managed to see that Arduino couldn't detect the NULL pointer without it's library. Or that a tram changed states from one function to another (never figured why, I just went around the problem)
+  Serial.print("The Tram:");
+  while(top_trame->next != NULL){ //Erases the trame_checked
+    print_received_byte(top_trame->Byte);
+    pop(&top_trame);
+  }
+  pop(&top_trame);
+  Serial.print(" done");
+}
 
 /* functions that communicates the type of info it received | It's only informative */
 
@@ -388,36 +533,36 @@ void received_information_from_Trame(int Information) {
       }
     }
   }
-  Serial.print(" - ");
-  Serial.println(Information);
+  Serial.println(" ");
+  return;
 }
 
 /*--------------------------------------------------------------------------------*/
-/*---------------------------------------------------------------------------------
+/*================================================================================*/
+/*--------------------------------------------------------------------------------*/
+/*
     2 type of trams:
       1st type:
 
           Start: %&DDAP*[0x7F7F]+0+00$[Somme des bits a 1 des champs '[0x7F7F]+0+00' donc 28 ou 0x007F]@:@
           Manuel: %&DDAP*[0xFAFA]+[0xAA]+00$[Somme des bits a 1 des champs du corps]@:@
+          %&DDAP*FF+A+FF$FF@:@
           Automatique: %&DDAP*[0xFAFA]+[0xDD]+00$[Somme des bits a 1 des champs du corps]@:@
+          %&DDAP*FF+D+FF$FF@:@
           Lux: %&DDAP*[0xFAFA]+0+[Lux Value]$[Somme des bits a 1 des champs du corps]@:@
 
       2nd type:
-          acknowledge the reception
-
           Ack:  &%DDAP!:@:
           Nack: &%DDAP?:@:
 
-    other quick test:
-
-      header error: %&DAAP*#$13@:@
-      footer error: %&DDAP*#$13
-      damaged tram: %&DDAP*asdavhsdfg€$13@:@
-      wrong info:   %&DDAP*#$13@:@
-
-  ----------------------------------------------------------------------------------*/
+          When getting information you might get:
+      
+      // 0: Time out / 1: Header error / 2: Footer error / 3: Error in the received Trame / 4: The info isn't recognised by our software
+      // 5: info - Manual / 6: info - Automatic / 7: info - Nack / 8: info - Ack
+      
+*/
 /*--------------------------------------------------------------------------------*/
-
+/*================================================================================*/
 /*--------------------------------------------------------------------------------*/
 
 /* -==  Setup  ==- */
@@ -428,30 +573,44 @@ void setup() {
   pinMode(LedRG, OUTPUT);
   freeRAM();
   Serial.println("Starting Software :");
+  delay(1000); //Wait 10s, so that the value on the LDR stabilizes
+  information_received_global = 0;
 }
-
-/*--------------------------------------------------------------------------------*/
-
-void blink_Yas() {
-  digitalWrite(LedRG, HIGH);   // turn the LED on (HIGH is the voltage level)
-  delay(1000);                       // wait for a second
-  digitalWrite(LedRG, LOW);    // turn the LED off by making the voltage LOW
-  delay(1000);
-}
-
-/* Code to check memory usage - credit : Mikael Patel */
-void freeRAM() {
-  extern int __heap_start, *__brkval;
-  int v;
-  Serial.print("Free memory is: ");
-  Serial.println((int) &v - (__brkval == 0 ? (int) &__heap_start : (int) __brkval));
-}
-/* ------------------------------------------------- */
-
 
 void loop() {
-  int information_received = 0;
-  information_received = receive_trame_info();
-  received_information_from_Trame(information_received);
-  delay(1000);
+  while((information_received_global == 0) || (information_received_global == 1)){ //Wait's to receive a Tram (if it times out or it's a header error we are most likely receiving nothing.)
+    information_received_global = receive_trame_info();
+  }
+  if(information_received_global == 6){ //We're in Automatic mode
+    do{
+      send_start();
+      information_received_global = receive_trame_info();
+    }while((information_received_global != 8) && (information_received_global != 5) && (information_received_global != 6)); //repeats until it receives the Ack information or is getting the information about a mode
+    if(information_received_global == 8){
+      do{
+        send_lux(get_lux());
+      }while((information_received_global != 8) && (information_received_global != 5) && (information_received_global != 6)); //repeats until it receives the Ack information or is getting the information about a mode
+      if(information_received_global == 8){
+        int k = 0;
+        do{
+          k = k + 1;
+          information_received_global = receive_trame_info();
+          if((information_received_global < 5) && (information_received_global > 1)){//Received damaged tram
+            send_2nd_trame('?'); // 2nd tram: Nack
+          }
+          delay(500);
+        }while((k < 30) && (information_received_global != 5)); //Waits around 15 seconds to exit or that we switch to manuel
+        if(information_received_global != 5){
+          information_received_global = 6; //Stay in Manual
+        }
+      }
+    }
+    
+  }else if(information_received_global == 5){ //We're in Manual mode
+    send_2nd_trame('!'); // 2nd tram: Ack
+    information_received_global = 0;
+  }else{ //We received a damaged Tram or not what we expected
+    send_2nd_trame('?'); // 2nd tram: Nack
+    information_received_global = 0;
+  }
 }
