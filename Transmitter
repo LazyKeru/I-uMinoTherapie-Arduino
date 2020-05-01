@@ -3,6 +3,12 @@
 //Connected modules:
 const int LedRG = 13;                       //Pin commanding Red and Green Led
 const int LDR = 14;                         //Pin receiving LDR value
+
+/*# INFO LDR #*/
+
+#define VIN 5 // V power voltage
+#define R 10000 //ohm resistance value
+
 int information_received_global;            //Information
 
 /* -== ID of Trame ==- */
@@ -447,7 +453,19 @@ void dec_shift_to_2_bytes(unsigned int * x_MSB, unsigned int * x_LSB, int dec)
 /* function gets lux value */
 
 int get_lux(){
+  int sensorVal; // Analog value from the sensor
+  int lux; //Lux value
+  sensorVal = analogRead(LDR);
+  lux = sensorRawToPhys(sensorVal);
+  return lux;
+}
 
+int sensorRawToPhys(int raw){ /* Credit - https://www.aranacorp.com/fr/mesure-de-luminosite-avec-une-photoresistance/ */
+  // Conversion rule
+  float Vout = float(raw) * (VIN / float(1024));// Conversion analog to voltage
+  float RLDR = (R * (VIN - Vout))/Vout; // Conversion voltage to resistance
+  int phys=500/(RLDR/1000); // Conversion resitance to lumen
+  return phys;
 }
 
 /*--------------------------------------------------------------------------------*/
@@ -573,7 +591,16 @@ void setup() {
   pinMode(LedRG, OUTPUT);
   freeRAM();
   Serial.println("Starting Software :");
-  delay(1000); //Wait 10s, so that the value on the LDR stabilizes
+  //Wait 10s, so that the value on the LDR stabilizes and has the led blink
+  int i;
+  digitalWrite(LedRG,LOW); //The Red led is on and the Green led is off
+  delay(2000);
+  for(i=0;i<2;i++){
+    digitalWrite(LedRG,HIGH); //The Green led is on and the Red led is off
+    delay(2000);
+    digitalWrite(LedRG,LOW); //The Red led is on and the Green led is off
+    delay(2000);
+  }
   information_received_global = 0;
 }
 
@@ -582,6 +609,7 @@ void loop() {
     information_received_global = receive_trame_info();
   }
   if(information_received_global == 6){ //We're in Automatic mode
+    digitalWrite(LedRG,HIGH); //The Green led is on and the Red led is off
     do{
       send_start();
       information_received_global = receive_trame_info();
@@ -607,6 +635,7 @@ void loop() {
     }
     
   }else if(information_received_global == 5){ //We're in Manual mode
+    digitalWrite(LedRG,LOW);//The Red led is on and the Green led is off
     send_2nd_trame('!'); // 2nd tram: Ack
     information_received_global = 0;
   }else{ //We received a damaged Tram or not what we expected
