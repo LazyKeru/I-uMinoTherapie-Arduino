@@ -4,12 +4,14 @@
 const int LedRG = 13;                       //Pin commanding Red and Green Led
 const int LDR = 14;                         //Pin receiving LDR value
 
-/*# INFO LDR #*/
+/*# Information about the LDR #*/
 
 #define VIN 5 // V power voltage
 #define R 10000 //ohm resistance value
 
-int information_received_global;            //Information
+/* information returned after scanning for a tram */
+
+int information_received_global;  //Used in the setup and loop functions
 
 /* -== ID of Trame ==- */
 /*Header info*/
@@ -44,19 +46,17 @@ const int footer_2nd_Trame[footerLength_2nd_Trame] = {':', '@', ':'};
 
 /* -==  My stack structure to stock the Trame it receives  ==- */
 
-
-//Might be better to put it in a .h file. As arduino sometimes compiles functions before structures.
-
 typedef struct ElementTrameStructure {
   int Byte;
   struct ElementTrameStructure * next = NULL;
 } ElementTrame;
 
+//Might be better to put it in a .h file. As arduino sometimes compiles functions before structures.
 // ElementTrame doesn't work well on tinkercad. So when using tinkercad, replace ElementTrame by struct ElementTrameStructure
 
 /* Function to create the structure which will stock the Trame */
 
-ElementTrame* init_tram() {
+ElementTrame* init_trame() {
   ElementTrame* element_trame = (ElementTrame*)malloc(sizeof(ElementTrame));
   if (element_trame == NULL) {
     exit(EXIT_FAILURE);
@@ -116,21 +116,20 @@ int print_received_byte(int incoming_byte) {
   //Serial.print(" ");
 }
 
-/* function that receives the message */
+/* function to extract informations from the trams */
 
 int receive_trame_info() {
   int res;   // 0: Time out / 1: Header error / 2: Footer error / 3: Error in the received Trame / 4: The info isn't recognised by our software
   int i = 0;      // 5: info - Manual / 6: info - Automatic / 7: info - Nack / 8: info - Ack
   int incoming_byte = -1;
   int trame_type = -1; // 1: 1st trame type / 2: 2nd trame type
-  //It waits to receive the start of what could be one of two trame. If it doesn't well it times out.
+  //It waits to receive the start of what could be one of two trame. If it doesn't, well it times out.
   while ((incoming_byte != header_1st_Trame[0] && incoming_byte != header_2nd_Trame[0]) && i < 1000) {
     incoming_byte = Serial.read();
     i++;
   }
   Serial.print("Receiving Bytes : ");
   print_received_byte(incoming_byte);
-  //freeRAM();
   if (incoming_byte == header_1st_Trame[0]) {
     trame_type = 1;
     //Serial.println("The byte is similar to the header of our 1st header type.");
@@ -139,7 +138,6 @@ int receive_trame_info() {
     //Serial.println("The byte is similar to the header of our 2nd header type.");
   }
   if(trame_type != -1){ //Checks if it didn't timeout + if it didn't define a trame type
-    //freeRAM();
     if(trame_type == 1){ //Checks the header of the trame
       //Serial.println("Checks the header of 1st Trame.");
       res = receive_X_trame(header_1st_Trame, headerLength_1st_Trame);
@@ -149,12 +147,11 @@ int receive_trame_info() {
     }
     if(res == -1){ //Continues to analyse the trame if there is no header error
       //Serial.println("No header Error.");
-      //freeRAM();
-      ElementTrame * trame = init_tram(); //Stocks the received element in a linked structure
+      ElementTrame * trame = init_trame(); //Stocks the received element in a linked structure
       if (trame_type == 1){ //Checks the footer of the trame and piles up the rest of the trame
-        res = pileup_X_tram_and_analyse_footer(footer_1st_Trame, footerLength_1st_Trame, &trame);
+        res = pileup_X_trame_and_analyse_footer(footer_1st_Trame, footerLength_1st_Trame, &trame);
       }else{
-        res = pileup_X_tram_and_analyse_footer(footer_2nd_Trame, footerLength_2nd_Trame, &trame);
+        res = pileup_X_trame_and_analyse_footer(footer_2nd_Trame, footerLength_2nd_Trame, &trame);
       }
       if(res == -1){
         //Serial.println("The footer is correct.");
@@ -165,6 +162,8 @@ int receive_trame_info() {
           //Serial.println("Analyse 2nd trame");
           res = analyse_2nd_trame(&trame);
         }
+      }else{
+        delete_trame(trame);
       }
       //Use to call the analyse_1st_trame() and analyse_2nd_trame() functions. However there was a problem, that the change brought to the Tram declared in this variable wouldn't be changed by the other called functions.
     }
@@ -175,6 +174,8 @@ int receive_trame_info() {
   received_information_from_Trame(res);
   return res;
 }
+
+/* function that receives the trams */
 
 int receive_X_trame(const int * header, const int headerLength) {
   int res = -1;
@@ -203,8 +204,9 @@ int receive_X_trame(const int * header, const int headerLength) {
   return res;
 }
 
+/* function that stocks the body of the tram and checks the footer for any errors */
 
-int pileup_X_tram_and_analyse_footer(const int * footer, const int footerLength, ElementTrame ** trame){
+int pileup_X_trame_and_analyse_footer(const int * footer, const int footerLength, ElementTrame ** trame){
   //Serial.println("Receives the rest of the Trame and checks for the footer.");
   int res = 2; //If we don't find the good footer, than there is a footer error
   int incoming_byte;
@@ -229,8 +231,10 @@ int pileup_X_tram_and_analyse_footer(const int * footer, const int footerLength,
   return res;
 }
 
+/* function that analyse the 1st trame body */
+
 int analyse_1st_trame(ElementTrame ** trame_reception) {
-  ElementTrame * trame_checked = init_tram();
+  ElementTrame * trame_checked = init_trame();
   int i;
   for (i = 0; i < footerLength_1st_Trame; i++) {
     pop(trame_reception);
@@ -288,6 +292,8 @@ int analyse_1st_trame(ElementTrame ** trame_reception) {
   return res;
 }
 
+/* function combines two bytes into a decimal number */
+
 int bit_shift_combine( unsigned int x_MSB, unsigned int x_LSB)
 {
   int combined;
@@ -296,6 +302,8 @@ int bit_shift_combine( unsigned int x_MSB, unsigned int x_LSB)
   combined |= x_LSB;             //logical OR keeps x_high intact in combined and fills in                                                             //rightmost 8 bits
   return combined;               //Credits: Matthew - http://projectsfromtech.blogspot.com/2013/09/combine-2-bytes-into-int-on-arduino.html
 }
+
+/* function that analyse the 2nd trame body */
 
 int analyse_2nd_trame(ElementTrame ** trame_reception) {
   int i = 0;
@@ -307,7 +315,7 @@ int analyse_2nd_trame(ElementTrame ** trame_reception) {
   int info;
   int expected_length = 1;
   int real_length = 0;
-  ElementTrame * trame_checked = init_tram();
+  ElementTrame * trame_checked = init_trame();
   //Serial.print("Expected length of the trame_reception's body : ");
   //Serial.println(expected_length);
   //It checks that the trame isn't longer than expected
@@ -381,7 +389,7 @@ void add_X_tab_unsigned_to_trame(unsigned int * x, const int xLength, ElementTra
 /* function sends 2nd trame type, with one choosen byte (int message - ! or ?) */
 
 void send_2nd_trame(int message){
-  ElementTrame * trame = init_tram();
+  ElementTrame * trame = init_trame();
   add_X_tab_to_trame(footer_2nd_Trame, footerLength_2nd_Trame, &trame);
   pileup(&trame,message);
   add_X_tab_to_trame(headerID,headerID_Length,&trame);
@@ -396,8 +404,10 @@ void send_2nd_trame(int message){
   }
 }
 
+/* function sends 1st trame type, start message */
+
 void send_start(){
-  ElementTrame * trame = init_tram();
+  ElementTrame * trame = init_trame();
   add_X_tab_to_trame(footer_1st_Trame, footerLength_1st_Trame, &trame);
   body_1st_Trame[1] = 0x7F;
   body_1st_Trame[2] = 0x7F;
@@ -409,8 +419,10 @@ void send_start(){
   Serial.println("Start");
 }
 
+/* function sends 1st trame type, lux value */
+
 void send_lux(int lux){
-  ElementTrame * trame = init_tram();
+  ElementTrame * trame = init_trame();
   add_X_tab_to_trame(footer_1st_Trame, footerLength_1st_Trame, &trame);
   body_1st_Trame[1] = 0xFA;
   body_1st_Trame[2] = 0xFA;
@@ -422,6 +434,8 @@ void send_lux(int lux){
   send_trame(&trame);
   Serial.println("Lux");
 }
+
+/* function that will tell the number of 1 bit in the bytes between * and $ */
 
 int number_of_1_bit(){
   int counted_1_bit = 0;
@@ -437,6 +451,8 @@ int number_of_1_bit(){
   //Serial.println(counted_1_bit, DEC);
   return counted_1_bit;
 }
+
+/* function that returns 2 bytes  */
 
 void dec_shift_to_2_bytes(unsigned int * x_MSB, unsigned int * x_LSB, int dec)
 {
